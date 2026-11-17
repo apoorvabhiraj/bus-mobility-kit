@@ -1,17 +1,8 @@
 {
   "developer": "koda",
-  "reported_at_utc": "2026-11-17T18:54:33.382333+00:00",
+  "reported_at_utc": "2026-11-17T18:54:50.036722+00:00",
   "branch": "feature/BUS-001-backend",
-  "working_tree_dirty": true,
-  "changed_paths": [
-    "cripts/publish_work_status.py",
-    "package.json",
-    "packages/",
-    "pnpm-lock.yaml",
-    "pnpm-workspace.yaml",
-    "schemas/contracts/journey-api-v1.yaml",
-    "scripts/check-openapi-compatibility.js",
-    "scripts/validate_task_scope.py"
-  ],
+  "working_tree_dirty": false,
+  "changed_paths": [],
   "limitations": "Voluntary local report; may be stale or incomplete; no diff/content included."
 }
