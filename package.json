@@ -1,0 +1,26 @@
+{
+  "name": "delhi-transport-stack",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Intelligent Bus Mobility & Crowdedness-Aware Journey Planner (Delhi)",
+  "scripts": {
+    "build": "pnpm --filter @delhi-transport/backend build",
+    "dev": "pnpm --filter @delhi-transport/backend dev",
+    "start": "pnpm --filter @delhi-transport/backend start",
+    "test": "pnpm --filter @delhi-transport/backend test",
+    "typecheck": "pnpm --filter @delhi-transport/backend typecheck",
+    "contract:check": "node scripts/check-openapi-compatibility.js",
+    "prisma:generate": "pnpm --filter @delhi-transport/backend prisma:generate"
+  },
+  "devDependencies": {
+    "yaml": "^2.6.1"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@prisma/client",
+      "@prisma/engines",
+      "esbuild",
+      "prisma"
+    ]
+  }
+}

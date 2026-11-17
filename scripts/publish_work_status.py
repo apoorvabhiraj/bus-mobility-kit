@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-\"\"\"Publish a privacy-minimized local Git status report to a shared folder.
+"""Publish a privacy-minimized local Git status report to a shared folder.
 
 This is voluntary reporting, not remote inspection or a security guarantee.
 It publishes path names and dirty-state metadata, never diffs or file contents.
-\"\"\"
+"""
 import argparse
 import json
 import subprocess
@@ -36,7 +36,7 @@ def main():
     }
     out = repo / args.out_dir / f"{args.developer}.json"
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps(report, indent=2) + "\\n", encoding="utf-8")
+    out.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
     print(f"Wrote {out.relative_to(repo)}")
     print("Review the report for secrets or sensitive path names before committing/publishing.")
 

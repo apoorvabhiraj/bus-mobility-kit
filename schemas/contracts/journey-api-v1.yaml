@@ -1,0 +1,542 @@
+openapi: 3.1.0
+info:
+  title: Delhi Transport Stack - Intelligent Bus Mobility & Journey Planner API
+  version: 1.0.0
+  description: >-
+    REST API for multimodal Delhi bus journey planning incorporating GPS-derived
+    travel time predictions (Problem 1) and ticketing-derived passenger crowdedness
+    proxies (Problem 2).
+servers:
+  - url: http://localhost:4000/api/v1
+    description: Local development server
+
+paths:
+  /health:
+    get:
+      summary: Health check endpoint
+      description: Returns service status, uptime, and database connectivity.
+      operationId: getHealth
+      responses:
+        '200':
+          description: Service is healthy or operational
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+  /journeys/plan:
+    post:
+      summary: Plan multimodal bus journey
+      description: >-
+        Calculates optimal route alternatives between origin and destination,
+        annotated with GPS travel-time distributions (Problem 1) and crowdedness
+        occupancy proxies (Problem 2).
+      operationId: planJourney
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JourneyPlanRequest'
+      responses:
+        '200':
+          description: Successfully planned journeys
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JourneyPlanResponse'
+        '400':
+          description: Invalid request parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Unprocessable entity / validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationErrorResponse'
+
+  /stops:
+    get:
+      summary: Search transit stops
+      description: Search bus stops by name or geographic coordinates in Delhi NCR.
+      operationId: searchStops
+      parameters:
+        - name: query
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Search text query (e.g., 'Kashmere Gate')
+        - name: lat
+          in: query
+          required: false
+          schema:
+            type: number
+            format: double
+          description: Latitude coordinate
+        - name: lon
+          in: query
+          required: false
+          schema:
+            type: number
+            format: double
+          description: Longitude coordinate
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 10
+          description: Max results to return
+      responses:
+        '200':
+          description: List of matching stops
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - stops
+                  - count
+                properties:
+                  count:
+                    type: integer
+                  stops:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Stop'
+
+  /routes/{routeId}/metrics:
+    get:
+      summary: Get route speed and crowdedness profile
+      description: Returns historical travel time speed distributions and crowdedness metrics by time of day.
+      operationId: getRouteMetrics
+      parameters:
+        - name: routeId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: dayOfWeek
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 6
+        - name: hour
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 23
+      responses:
+        '200':
+          description: Route metrics profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RouteMetricsResponse'
+        '404':
+          description: Route not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  schemas:
+    LocationPoint:
+      type: object
+      required:
+        - lat
+        - lon
+      properties:
+        lat:
+          type: number
+          format: double
+          minimum: -90
+          maximum: 90
+        lon:
+          type: number
+          format: double
+          minimum: -180
+          maximum: 180
+        name:
+          type: string
+        stopId:
+          type: string
+
+    JourneyPreferences:
+      type: object
+      properties:
+        optimizeFor:
+          type: string
+          enum: [fastest, least_crowded, least_transfers, balanced]
+          default: balanced
+        maxTransfers:
+          type: integer
+          minimum: 0
+          maximum: 5
+          default: 3
+        maxWalkingDistanceMeters:
+          type: integer
+          minimum: 100
+          maximum: 5000
+          default: 1200
+        crowdingTolerance:
+          type: string
+          enum: [low, medium, high]
+          default: medium
+        includeCrowding:
+          type: boolean
+          default: true
+        includeTravelTimePercentiles:
+          type: boolean
+          default: true
+
+    JourneyPlanRequest:
+      type: object
+      required:
+        - origin
+        - destination
+      properties:
+        origin:
+          $ref: '#/components/schemas/LocationPoint'
+        destination:
+          $ref: '#/components/schemas/LocationPoint'
+        departureTime:
+          type: string
+          format: date-time
+        preferences:
+          $ref: '#/components/schemas/JourneyPreferences'
+
+    Stop:
+      type: object
+      required:
+        - id
+        - name
+        - lat
+        - lon
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        lat:
+          type: number
+          format: double
+        lon:
+          type: number
+          format: double
+        zone:
+          type: string
+
+    Problem1TravelTimeMetrics:
+      type: object
+      required:
+        - p50DurationMinutes
+        - p90DurationMinutes
+        - trafficDelayMinutes
+        - historicalConfidenceScore
+        - gpsObservationCount
+      properties:
+        p50DurationMinutes:
+          type: number
+          description: Median predicted travel time
+        p90DurationMinutes:
+          type: number
+          description: 90th percentile predicted travel time (worst-case traffic)
+        trafficDelayMinutes:
+          type: number
+          description: Estimated delay due to peak traffic conditions
+        historicalConfidenceScore:
+          type: number
+          minimum: 0
+          maximum: 1
+          description: Reliability score of GPS observation sample
+        gpsObservationCount:
+          type: integer
+          description: Number of historical GPS pings used in model
+
+    Problem2CrowdednessMetrics:
+      type: object
+      required:
+        - overallCrowdingLevel
+        - peakCrowdingLevel
+        - averageOccupancyProxy
+        - standingLikelihood
+        - dataConfidenceScore
+        - dataCaveatNotice
+      properties:
+        overallCrowdingLevel:
+          type: string
+          enum: [low, moderate, high, very_high]
+        peakCrowdingLevel:
+          type: string
+          enum: [low, moderate, high, very_high]
+        averageOccupancyProxy:
+          type: number
+          minimum: 0
+          maximum: 1
+          description: Estimated ticket-derived occupancy ratio (0.0 to 1.0)
+        standingLikelihood:
+          type: string
+          enum: [unlikely, possible, likely, guaranteed]
+        dataConfidenceScore:
+          type: number
+          minimum: 0
+          maximum: 1
+        dataCaveatNotice:
+          type: string
+          description: Caveat regarding proxy nature of e-ticketing counts
+
+    TransitSegmentTravelTime:
+      type: object
+      required:
+        - estimatedMinutes
+        - expectedDelayMinutes
+        - confidence
+      properties:
+        estimatedMinutes:
+          type: number
+        expectedDelayMinutes:
+          type: number
+        confidence:
+          type: number
+
+    TransitSegmentCrowding:
+      type: object
+      required:
+        - level
+        - occupancyPercentage
+      properties:
+        level:
+          type: string
+          enum: [low, moderate, high, very_high]
+        occupancyPercentage:
+          type: number
+        peakStationName:
+          type: string
+
+    BusLegDetails:
+      type: object
+      required:
+        - routeId
+        - routeNumber
+        - busType
+        - headsign
+        - intermediateStopsCount
+        - segmentTravelTime
+        - segmentCrowding
+      properties:
+        routeId:
+          type: string
+        routeNumber:
+          type: string
+        busType:
+          type: string
+          enum: [Standard, AC, Electric]
+        headsign:
+          type: string
+        intermediateStopsCount:
+          type: integer
+        segmentTravelTime:
+          $ref: '#/components/schemas/TransitSegmentTravelTime'
+        segmentCrowding:
+          $ref: '#/components/schemas/TransitSegmentCrowding'
+
+    JourneyLeg:
+      type: object
+      required:
+        - legType
+        - durationMinutes
+        - distanceMeters
+        - fromStop
+        - toStop
+      properties:
+        legType:
+          type: string
+          enum: [WALK, BUS]
+        durationMinutes:
+          type: number
+        distanceMeters:
+          type: number
+        fromStop:
+          $ref: '#/components/schemas/Stop'
+        toStop:
+          $ref: '#/components/schemas/Stop'
+        busDetails:
+          $ref: '#/components/schemas/BusLegDetails'
+
+    JourneyOption:
+      type: object
+      required:
+        - id
+        - summary
+        - totalDurationMinutes
+        - totalWalkingDistanceMeters
+        - transfers
+        - fareInRupees
+        - departureTime
+        - estimatedArrivalTime
+        - problem1TravelTimeMetrics
+        - problem2CrowdednessMetrics
+        - legs
+      properties:
+        id:
+          type: string
+          format: uuid
+        summary:
+          type: string
+        totalDurationMinutes:
+          type: number
+        totalWalkingDistanceMeters:
+          type: number
+        transfers:
+          type: integer
+        fareInRupees:
+          type: number
+        departureTime:
+          type: string
+          format: date-time
+        estimatedArrivalTime:
+          type: string
+          format: date-time
+        problem1TravelTimeMetrics:
+          $ref: '#/components/schemas/Problem1TravelTimeMetrics'
+        problem2CrowdednessMetrics:
+          $ref: '#/components/schemas/Problem2CrowdednessMetrics'
+        legs:
+          type: array
+          items:
+            $ref: '#/components/schemas/JourneyLeg'
+
+    JourneyPlanResponse:
+      type: object
+      required:
+        - query
+        - routesCount
+        - routes
+      properties:
+        query:
+          $ref: '#/components/schemas/JourneyPlanRequest'
+        routesCount:
+          type: integer
+        routes:
+          type: array
+          items:
+            $ref: '#/components/schemas/JourneyOption'
+
+    RouteMetricsResponse:
+      type: object
+      required:
+        - routeId
+        - routeNumber
+        - averageSpeedKmh
+        - p50TripDurationMinutes
+        - p90TripDurationMinutes
+        - averageOccupancyProxy
+        - crowdingCategory
+        - hourlySpeedProfile
+      properties:
+        routeId:
+          type: string
+        routeNumber:
+          type: string
+        averageSpeedKmh:
+          type: number
+        p50TripDurationMinutes:
+          type: number
+        p90TripDurationMinutes:
+          type: number
+        averageOccupancyProxy:
+          type: number
+        crowdingCategory:
+          type: string
+          enum: [low, moderate, high, very_high]
+        hourlySpeedProfile:
+          type: array
+          items:
+            type: object
+            required:
+              - hour
+              - speedKmh
+              - crowdingLevel
+            properties:
+              hour:
+                type: integer
+              speedKmh:
+                type: number
+              crowdingLevel:
+                type: string
+                enum: [low, moderate, high, very_high]
+
+    HealthResponse:
+      type: object
+      required:
+        - status
+        - timestamp
+        - service
+        - version
+        - database
+      properties:
+        status:
+          type: string
+          enum: [ok, degraded]
+        timestamp:
+          type: string
+          format: date-time
+        service:
+          type: string
+        version:
+          type: string
+        database:
+          type: object
+          required:
+            - status
+          properties:
+            status:
+              type: string
+              enum: [connected, disconnected, mock_fallback]
+
+    ErrorResponse:
+      type: object
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        details:
+          type: object
+
+    ValidationErrorResponse:
+      type: object
+      required:
+        - code
+        - message
+        - issues
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        issues:
+          type: array
+          items:
+            type: object
+            required:
+              - path
+              - message
+            properties:
+              path:
+                type: string
+              message:
+                type: string

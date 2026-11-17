@@ -1,0 +1,110 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model Stop {
+  id        String   @id @default(uuid())
+  stopCode  String   @unique
+  name      String
+  lat       Float
+  lon       Float
+  zone      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  fromSegments SegmentTravelTime[] @relation("FromStopTravelTime")
+  toSegments   SegmentTravelTime[] @relation("ToStopTravelTime")
+
+  routeStops RouteStop[]
+
+  @@index([lat, lon])
+  @@index([name])
+}
+
+model BusRoute {
+  id              String   @id @default(uuid())
+  routeNumber     String   @unique
+  longName        String
+  busType         String   @default("Standard") // Standard, AC, Electric
+  totalDistanceKm Float
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  routeStops          RouteStop[]
+  travelTimeSegments  SegmentTravelTime[]
+  crowdednessSegments SegmentCrowdedness[]
+
+  @@index([routeNumber])
+}
+
+model RouteStop {
+  id           String @id @default(uuid())
+  routeId      String
+  stopId       String
+  stopSequence Int
+
+  route BusRoute @relation(fields: [routeId], references: [id], onDelete: Cascade)
+  stop  Stop     @relation(fields: [stopId], references: [id], onDelete: Cascade)
+
+  @@unique([routeId, stopSequence])
+  @@index([routeId])
+  @@index([stopId])
+}
+
+// Problem 1: GPS-derived Travel Time & Speed Percentiles
+model SegmentTravelTime {
+  id                String   @id @default(uuid())
+  routeId           String
+  fromStopId        String
+  toStopId          String
+  hourOfDay         Int      // 0 - 23
+  dayOfWeek         Int      // 0 = Sunday, 6 = Saturday
+  medianDurationSec Float    // p50
+  p90DurationSec    Float    // p90
+  trafficDelaySec   Float
+  sampleCount       Int
+  confidenceScore   Float    // 0.0 - 1.0
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  route    BusRoute @relation(fields: [routeId], references: [id], onDelete: Cascade)
+  fromStop Stop     @relation("FromStopTravelTime", fields: [fromStopId], references: [id], onDelete: Cascade)
+  toStop   Stop     @relation("ToStopTravelTime", fields: [toStopId], references: [id], onDelete: Cascade)
+
+  @@index([routeId, hourOfDay, dayOfWeek])
+  @@index([fromStopId, toStopId])
+}
+
+// Problem 2: E-Ticketing Crowdedness & Passenger Load Proxy
+model SegmentCrowdedness {
+  id                 String   @id @default(uuid())
+  routeId            String
+  fromStopId         String
+  toStopId           String
+  hourOfDay          Int      // 0 - 23
+  dayOfWeek          Int      // 0 = Sunday, 6 = Saturday
+  occupancyRatio     Float    // 0.0 - 1.0 proxy
+  crowdingCategory   String   // low, moderate, high, very_high
+  standingLikelihood String   // unlikely, possible, likely, guaranteed
+  confidenceScore    Float    // 0.0 - 1.0
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  route BusRoute @relation(fields: [routeId], references: [id], onDelete: Cascade)
+
+  @@index([routeId, hourOfDay, dayOfWeek])
+  @@index([fromStopId, toStopId])
+}
+
+model JourneySearchLog {
+  id               String   @id @default(uuid())
+  originQuery      String
+  destinationQuery String
+  optimizePreference String @default("balanced")
+  createdAt        DateTime @default(now())
+}
