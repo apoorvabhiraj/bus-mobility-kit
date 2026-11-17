@@ -1,0 +1,207 @@
+﻿openapi: 3.1.0
+info:
+  title: Bus Travel-Time Service (Problem 1 Domain API)
+  version: 1.0.0
+  description: >-
+    Estimates plausible bus journey options and travel times between two locations
+    in Delhi, built from DTC bus GPS traces. Problem 1 Domain Contract reconciled
+    with unified application contract schemas/contracts/journey-api-v1.yaml.
+servers:
+  - url: https://api.delhibus.example/v1
+    description: Production
+  - url: http://localhost:4000/v1
+    description: Development
+
+tags:
+  - name: journey
+    description: Bus journey travel-time estimation operations
+
+paths:
+  /journey/travel-time:
+    post:
+      tags: [journey]
+      summary: Estimate bus journey options between two locations
+      operationId: estimateTravelTime
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TravelTimeRequest'
+      responses:
+        '200':
+          description: Plausible bus journey options with estimated travel times
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TravelTimeResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: No route found between the locations
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: Insufficient GPS coverage for the requested roads/times
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+components:
+  schemas:
+    Coord:
+      type: object
+      required: [lat, lon]
+      properties:
+        lat:
+          type: number
+          description: Latitude (decimal degrees). Delhi approx 28.40-28.90.
+        lon:
+          type: number
+          description: Longitude (decimal degrees). Delhi approx 76.80-77.35.
+
+    LocationInput:
+      oneOf:
+        - $ref: '#/components/schemas/Coord'
+        - type: object
+          required: [place]
+          properties:
+            place:
+              type: string
+              description: Free-text place name (resolved by geocoder)
+
+    TravelTimeRequest:
+      type: object
+      required: [origin, destination, departure_at]
+      properties:
+        origin:
+          $ref: '#/components/schemas/LocationInput'
+        destination:
+          $ref: '#/components/schemas/LocationInput'
+        departure_at:
+          type: string
+          format: date-time
+          description: Intended departure time (India time, UTC+05:30). Defaults to now if omitted.
+        options:
+          type: object
+          properties:
+            max_options:
+              type: integer
+              minimum: 1
+              maximum: 5
+              default: 3
+              description: Maximum number of journey options to return.
+            prefer:
+              type: string
+              enum: [fastest, least_crowded, fewest_transfers]
+              default: fastest
+            walk_radius_m:
+              type: integer
+              minimum: 100
+              maximum: 2000
+              default: 500
+              description: Max walking distance to/from a stop.
+
+    JourneyOption:
+      type: object
+      required: [option_id, origin, destination, departure_at, arrival_at, estimated_travel_time_s, segments, confidence]
+      properties:
+        option_id:
+          type: string
+        origin:
+          $ref: '#/components/schemas/Coord'
+        destination:
+          $ref: '#/components/schemas/Coord'
+        departure_at:
+          type: string
+          format: date-time
+        arrival_at:
+          type: string
+          format: date-time
+        estimated_travel_time_s:
+          type: integer
+          description: Total estimated journey time in seconds (walk + wait + ride + transfer).
+        ride_time_s:
+          type: integer
+        walk_time_s:
+          type: integer
+        wait_time_s:
+          type: integer
+        transfer_count:
+          type: integer
+        distance_m:
+          type: integer
+        confidence:
+          type: number
+          minimum: 0
+          maximum: 1
+          description: Overall confidence (lower where GPS coverage is sparse).
+        uncertainty_note:
+          type: string
+          description: Human-readable note on where uncertainty is highest.
+        segments:
+          type: array
+          items:
+            $ref: '#/components/schemas/JourneySegment'
+
+    JourneySegment:
+      type: object
+      required: [segment_type, from, to, estimated_travel_time_s]
+      properties:
+        segment_type:
+          type: string
+          enum: [walk, wait, ride, transfer]
+        from:
+          $ref: '#/components/schemas/Coord'
+        to:
+          $ref: '#/components/schemas/Coord'
+        stop_id:
+          type: string
+        route_id:
+          type: string
+        estimated_travel_time_s:
+          type: integer
+        confidence:
+          type: number
+          minimum: 0
+          maximum: 1
+
+    TravelTimeResponse:
+      type: object
+      required: [query_id, origin, destination, departure_at, options, coverage_note, generated_at_utc]
+      properties:
+        query_id:
+          type: string
+        origin:
+          $ref: '#/components/schemas/Coord'
+        destination:
+          $ref: '#/components/schemas/Coord'
+        departure_at:
+          type: string
+          format: date-time
+        options:
+          type: array
+          items:
+            $ref: '#/components/schemas/JourneyOption'
+        coverage_note:
+          type: string
+          description: Note on GPS coverage for the requested roads/times (see limitations).
+        generated_at_utc:
+          type: string
+          format: date-time
+
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+        message:
+          type: string

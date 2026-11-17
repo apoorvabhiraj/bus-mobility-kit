@@ -1,0 +1,765 @@
+﻿openapi: 3.1.0
+info:
+  title: Crowdedness Estimation API
+  version: 1.0.0
+  description: |
+    API for querying bus crowdedness estimates by route, segment, and time band.
+    
+    **Important**: All estimates are **demand/crowding proxies** derived from e-ticketing data
+    covering approximately 3â€“4% of total bus tickets. They are NOT measured segment occupancy.
+    See `estimation_level` in each response for the method used.
+    
+    Per PROJECT.md: "Ticket records are not automatically a complete count of onboard passengers.
+    Segment occupancy requires boarding and alighting information or another defensible
+    load-estimation source. Without boarding/alighting stop data, label results as
+    demand/crowding proxies, not measured segment occupancy."
+
+    Problem 2 Domain Contract reconciled with unified application contract schemas/contracts/journey-api-v1.yaml.
+  contact:
+    name: Delhi Transport Stack Hackathon â€” Problem 2 Team
+  license:
+    name: Proprietary
+    url: https://example.com/license
+
+servers:
+  - url: https://api.delhi-transport.example/v1
+    description: Production
+  - url: https://staging-api.delhi-transport.example/v1
+    description: Staging
+
+tags:
+  - name: Crowdedness
+    description: Crowdedness estimation endpoints
+  - name: Metadata
+    description: Reference data and health checks
+
+paths:
+  /crowdedness/estimate:
+    get:
+      tags:
+        - Crowdedness
+      summary: Get crowdedness estimate for a route segment and time band
+      description: |
+        Returns the estimated crowdedness level for a specific route, direction, segment, and time band.
+        The response includes load percentiles, capacity, load factors, and a 1â€“5 crowdedness classification.
+      operationId: getCrowdednessEstimate
+      parameters:
+        - name: route_id
+          in: query
+          required: true
+          description: Bus route identifier (e.g., "724", "102A", "ECO-1")
+          schema:
+            type: string
+            pattern: '^[A-Z0-9\-]+$'
+          example: "724"
+        - name: direction
+          in: query
+          required: true
+          description: Route direction
+          schema:
+            type: string
+            enum: ["UP", "DOWN", "1", "2"]
+          example: "UP"
+        - name: segment_id
+          in: query
+          required: false
+          description: |
+            Specific segment identifier (format: `{route_id}_{direction}_seg_{stop_sequence}`).
+            If omitted, returns the **worst (maximum) crowdedness level** across all segments
+            for the given route/direction/timeband.
+          schema:
+            type: string
+            pattern: '^[A-Z0-9\-]+_(UP|DOWN)_seg_\d+$'
+          example: "724_UP_seg_12"
+        - name: from_stop_id
+          in: query
+          required: false
+          description: |
+            Alternative to segment_id: boarding stop ID. Combined with to_stop_id to identify segment.
+          schema:
+            type: string
+          example: "STP-045"
+        - name: to_stop_id
+          in: query
+          required: false
+          description: Alighting stop ID (used with from_stop_id)
+          schema:
+            type: string
+          example: "STP-078"
+        - name: time_band
+          in: query
+          required: true
+          description: |
+            30-minute time band in 24-hour format (IST).
+            Format: "HH:MM-HH:MM" (e.g., "08:00-08:30", "23:30-24:00")
+          schema:
+            type: string
+            pattern: '^([01]\d|2[0-3]):[0-5]\d-([01]\d|2[0-3]):[0-5]\d$'
+          example: "08:00-08:30"
+        - name: day_type
+          in: query
+          required: false
+          default: "weekday"
+          description: Day type for the estimate
+          schema:
+            type: string
+            enum: ["weekday", "saturday", "sunday"]
+          example: "weekday"
+        - name: date
+          in: query
+          required: false
+          description: |
+            Specific date (YYYY-MM-DD) to override day_type inference.
+            If provided, day_type is inferred from this date.
+          schema:
+            type: string
+            format: date
+          example: "2026-10-15"
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CrowdednessEstimateResponse'
+        '400':
+          description: Invalid parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: No estimate available for the requested route/segment/timeband
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /crowdedness/route-summary:
+    get:
+      tags:
+        - Crowdedness
+      summary: Get crowdedness summary for an entire route across all segments
+      description: |
+        Returns aggregated crowdedness for all segments of a route at a given time band.
+        Useful for journey planner to compare route alternatives.
+      operationId: getRouteCrowdednessSummary
+      parameters:
+        - name: route_id
+          in: query
+          required: true
+          schema:
+            type: string
+            pattern: '^[A-Z0-9\-]+$'
+          example: "724"
+        - name: direction
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: ["UP", "DOWN", "1", "2"]
+          example: "UP"
+        - name: time_band
+          in: query
+          required: true
+          schema:
+            type: string
+            pattern: '^([01]\d|2[0-3]):[0-5]\d-([01]\d|2[0-3]):[0-5]\d$'
+          example: "08:00-08:30"
+        - name: day_type
+          in: query
+          required: false
+          default: "weekday"
+          schema:
+            type: string
+            enum: ["weekday", "saturday", "sunday"]
+          example: "weekday"
+      responses:
+        '200':
+          description: Route crowdedness summary
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RouteCrowdednessSummaryResponse'
+        '400':
+          description: Invalid parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Route not found or no data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /crowdedness/time-series:
+    get:
+      tags:
+        - Crowdedness
+      summary: Get crowdedness time series for a route segment across the day
+      description: |
+        Returns crowdedness estimates for all time bands in a day for a specific segment.
+        Useful for "when is it least crowded?" queries.
+      operationId: getCrowdednessTimeSeries
+      parameters:
+        - name: route_id
+          in: query
+          required: true
+          schema:
+            type: string
+            pattern: '^[A-Z0-9\-]+$'
+          example: "724"
+        - name: direction
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: ["UP", "DOWN", "1", "2"]
+          example: "UP"
+        - name: segment_id
+          in: query
+          required: true
+          schema:
+            type: string
+            pattern: '^[A-Z0-9\-]+_(UP|DOWN)_seg_\d+$'
+          example: "724_UP_seg_12"
+        - name: day_type
+          in: query
+          required: false
+          default: "weekday"
+          schema:
+            type: string
+            enum: ["weekday", "saturday", "sunday"]
+          example: "weekday"
+      responses:
+        '200':
+          description: Time series of crowdedness estimates
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CrowdednessTimeSeriesResponse'
+        '400':
+          description: Invalid parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Segment not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /crowdedness/health:
+    get:
+      tags:
+        - Metadata
+      summary: Health check endpoint
+      operationId: healthCheck
+      responses:
+        '200':
+          description: Service healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: ["healthy", "degraded"]
+                  version:
+                    type: string
+                  data_freshness:
+                    type: string
+                    format: date-time
+                    description: Timestamp of last successful data pipeline run
+                  estimation_levels_available:
+                    type: array
+                    items:
+                      type: string
+                      enum: ["measured_occupancy", "inferred_occupancy", "boarding_demand_proxy", "ticket_volume_proxy"]
+
+  /crowdedness/metadata/routes:
+    get:
+      tags:
+        - Metadata
+      summary: List routes with crowdedness data availability
+      operationId: listRoutesWithCrowdedness
+      parameters:
+        - name: day_type
+          in: query
+          required: false
+          default: "weekday"
+          schema:
+            type: string
+            enum: ["weekday", "saturday", "sunday"]
+      responses:
+        '200':
+          description: List of routes
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  routes:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/RouteMetadata'
+
+  /crowdedness/metadata/segments:
+    get:
+      tags:
+        - Metadata
+      summary: List segments for a route with geometry
+      operationId: listRouteSegments
+      parameters:
+        - name: route_id
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: direction
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: ["UP", "DOWN", "1", "2"]
+      responses:
+        '200':
+          description: Route segments with stop info and geometry
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  segments:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/SegmentMetadata'
+
+components:
+  schemas:
+    CrowdednessEstimateResponse:
+      type: object
+      required:
+        - route_id
+        - direction
+        - time_band
+        - day_type
+        - estimation_level
+        - p50_load
+        - p80_load
+        - p95_load
+        - capacity
+        - load_factor_p50
+        - load_factor_p80
+        - load_factor_p95
+        - crowdedness_level
+        - crowdedness_label
+        - sample_count
+        - uncertainty_flag
+        - last_updated
+        - disclaimer
+      properties:
+        route_id:
+          type: string
+          example: "724"
+        direction:
+          type: string
+          enum: ["UP", "DOWN"]
+          example: "UP"
+        segment_id:
+          type: [string, "null"]
+          example: "724_UP_seg_12"
+        from_stop_id:
+          type: [string, "null"]
+          example: "STP-045"
+        to_stop_id:
+          type: [string, "null"]
+          example: "STP-078"
+        segment_length_m:
+          type: [integer, "null"]
+          example: 850
+        time_band:
+          type: string
+          example: "08:00-08:30"
+        day_type:
+          type: string
+          enum: ["weekday", "saturday", "sunday"]
+          example: "weekday"
+        estimation_level:
+          type: string
+          enum: ["measured_occupancy", "inferred_occupancy", "boarding_demand_proxy", "ticket_volume_proxy"]
+          description: |
+            **Critical field** â€” indicates the reliability and method of the estimate:
+            - `measured_occupancy`: Direct boarding+alighting cumulative sum (highest confidence)
+            - `inferred_occupancy`: Boarding + probabilistic alighting inference
+            - `boarding_demand_proxy`: Cumulative boarding count only (upper bound, no alighting)
+            - `ticket_volume_proxy`: Aggregate ticket count only (temporal pattern only)
+          example: "inferred_occupancy"
+        p50_load:
+          type: number
+          format: float
+          description: Median estimated onboard passengers (weighted)
+          example: 28.4
+        p80_load:
+          type: number
+          format: float
+          description: 80th percentile onboard (design load for "typical busy")
+          example: 42.1
+        p95_load:
+          type: number
+          format: float
+          description: 95th percentile onboard (near-crush conditions)
+          example: 55.3
+        capacity:
+          type: integer
+          description: Vehicle capacity (seated + standing)
+          example: 50
+        load_factor_p50:
+          type: number
+          format: float
+          description: p50_load / capacity
+          example: 0.57
+        load_factor_p80:
+          type: number
+          format: float
+          description: p80_load / capacity (used for crowdedness classification)
+          example: 0.84
+        load_factor_p95:
+          type: number
+          format: float
+          description: p95_load / capacity
+          example: 1.11
+        crowdedness_level:
+          type: integer
+          minimum: 1
+          maximum: 5
+          description: |
+            1 = comfortable (<30%),
+            2 = moderate (30â€“50%),
+            3 = crowded (50â€“70%),
+            4 = very_crowded (70â€“90%),
+            5 = crush (â‰¥90%)
+          example: 4
+        crowdedness_label:
+          type: string
+          enum: ["comfortable", "moderate", "crowded", "very_crowded", "crush"]
+          example: "very_crowded"
+        sample_count:
+          type: integer
+          description: Number of observed trips / samples supporting this estimate
+          example: 47
+        uncertainty_flag:
+          type: boolean
+          description: True if high uncertainty (low samples or high variance)
+          example: false
+        last_updated:
+          type: string
+          format: date-time
+          description: When this estimate was last computed (IST)
+          example: "2026-10-31T00:00:00+05:30"
+        disclaimer:
+          type: string
+          description: |
+            Mandatory disclaimer per PROJECT.md â€” included in every response.
+          example: "This is a demand/crowding proxy based on e-ticketing data covering ~3â€“4% of total tickets. Not measured segment occupancy."
+
+    RouteCrowdednessSummaryResponse:
+      type: object
+      required:
+        - route_id
+        - direction
+        - time_band
+        - day_type
+        - segments
+        - worst_crowdedness_level
+        - worst_crowdedness_label
+        - disclaimer
+      properties:
+        route_id:
+          type: string
+          example: "724"
+        direction:
+          type: string
+          enum: ["UP", "DOWN"]
+          example: "UP"
+        time_band:
+          type: string
+          example: "08:00-08:30"
+        day_type:
+          type: string
+          enum: ["weekday", "saturday", "sunday"]
+          example: "weekday"
+        segments:
+          type: array
+          items:
+            $ref: '#/components/schemas/SegmentCrowdednessSummary'
+        worst_crowdedness_level:
+          type: integer
+          minimum: 1
+          maximum: 5
+          example: 4
+        worst_crowdedness_label:
+          type: string
+          enum: ["comfortable", "moderate", "crowded", "very_crowded", "crush"]
+          example: "very_crowded"
+        disclaimer:
+          type: string
+          example: "This is a demand/crowding proxy based on e-ticketing data covering ~3â€“4% of total tickets. Not measured segment occupancy."
+
+    SegmentCrowdednessSummary:
+      type: object
+      required:
+        - segment_id
+        - from_stop_id
+        - to_stop_id
+        - estimation_level
+        - crowdedness_level
+        - crowdedness_label
+        - load_factor_p80
+      properties:
+        segment_id:
+          type: string
+          example: "724_UP_seg_12"
+        from_stop_id:
+          type: string
+          example: "STP-045"
+        from_stop_name:
+          type: string
+          example: "Connaught Place"
+        to_stop_id:
+          type: string
+          example: "STP-078"
+        to_stop_name:
+          type: string
+          example: "AIIMS"
+        segment_length_m:
+          type: integer
+          example: 850
+        estimation_level:
+          type: string
+          enum: ["measured_occupancy", "inferred_occupancy", "boarding_demand_proxy", "ticket_volume_proxy"]
+          example: "inferred_occupancy"
+        crowdedness_level:
+          type: integer
+          minimum: 1
+          maximum: 5
+          example: 4
+        crowdedness_label:
+          type: string
+          enum: ["comfortable", "moderate", "crowded", "very_crowded", "crush"]
+          example: "very_crowded"
+        load_factor_p80:
+          type: number
+          format: float
+          example: 0.84
+        p80_load:
+          type: number
+          format: float
+          example: 42.1
+        capacity:
+          type: integer
+          example: 50
+        uncertainty_flag:
+          type: boolean
+          example: false
+
+    CrowdednessTimeSeriesResponse:
+      type: object
+      required:
+        - route_id
+        - direction
+        - segment_id
+        - day_type
+        - time_series
+        - disclaimer
+      properties:
+        route_id:
+          type: string
+          example: "724"
+        direction:
+          type: string
+          enum: ["UP", "DOWN"]
+          example: "UP"
+        segment_id:
+          type: string
+          example: "724_UP_seg_12"
+        from_stop_name:
+          type: string
+          example: "Connaught Place"
+        to_stop_name:
+          type: string
+          example: "AIIMS"
+        day_type:
+          type: string
+          enum: ["weekday", "saturday", "sunday"]
+          example: "weekday"
+        time_series:
+          type: array
+          items:
+            $ref: '#/components/schemas/TimeSeriesPoint'
+        disclaimer:
+          type: string
+          example: "This is a demand/crowding proxy based on e-ticketing data covering ~3â€“4% of total tickets. Not measured segment occupancy."
+
+    TimeSeriesPoint:
+      type: object
+      required:
+        - time_band
+        - estimation_level
+        - crowdedness_level
+        - crowdedness_label
+        - load_factor_p80
+      properties:
+        time_band:
+          type: string
+          example: "08:00-08:30"
+        estimation_level:
+          type: string
+          enum: ["measured_occupancy", "inferred_occupancy", "boarding_demand_proxy", "ticket_volume_proxy"]
+          example: "inferred_occupancy"
+        crowdedness_level:
+          type: integer
+          minimum: 1
+          maximum: 5
+          example: 4
+        crowdedness_label:
+          type: string
+          enum: ["comfortable", "moderate", "crowded", "very_crowded", "crush"]
+          example: "very_crowded"
+        load_factor_p80:
+          type: number
+          format: float
+          example: 0.84
+        p80_load:
+          type: number
+          format: float
+          example: 42.1
+        capacity:
+          type: integer
+          example: 50
+        uncertainty_flag:
+          type: boolean
+          example: false
+
+    RouteMetadata:
+      type: object
+      required:
+        - route_id
+        - directions
+        - has_crowdedness_data
+      properties:
+        route_id:
+          type: string
+          example: "724"
+        route_name:
+          type: string
+          example: "Anand Vihar - Nehru Place"
+        directions:
+          type: array
+          items:
+            type: string
+            enum: ["UP", "DOWN"]
+          example: ["UP", "DOWN"]
+        has_crowdedness_data:
+          type: boolean
+          example: true
+        data_coverage_pct:
+          type: number
+          format: float
+          description: Percentage of time bands with estimates
+          example: 92.5
+
+    SegmentMetadata:
+      type: object
+      required:
+        - segment_id
+        - from_stop_id
+        - to_stop_id
+        - sequence
+      properties:
+        segment_id:
+          type: string
+          example: "724_UP_seg_12"
+        from_stop_id:
+          type: string
+          example: "STP-045"
+        from_stop_name:
+          type: string
+          example: "Connaught Place"
+        from_stop_lat:
+          type: number
+          format: double
+          example: 28.6315
+        from_stop_lon:
+          type: number
+          format: double
+          example: 77.2167
+        to_stop_id:
+          type: string
+          example: "STP-078"
+        to_stop_name:
+          type: string
+          example: "AIIMS"
+        to_stop_lat:
+          type: number
+          format: double
+          example: 28.5672
+        to_stop_lon:
+          type: number
+          format: double
+          example: 77.2100
+        sequence:
+          type: integer
+          example: 12
+        segment_length_m:
+          type: integer
+          example: 850
+        geometry:
+          type: [object, "null"]
+          description: GeoJSON LineString for the segment
+
+    ErrorResponse:
+      type: object
+      required:
+        - error
+        - message
+        - timestamp
+      properties:
+        error:
+          type: string
+          example: "INVALID_PARAMETER"
+        message:
+          type: string
+          example: "time_band must match pattern HH:MM-HH:MM"
+        timestamp:
+          type: string
+          format: date-time
+          example: "2026-11-18T00:05:00+05:30"
+        details:
+          type: [object, "null"]
+
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+security:
+  - ApiKeyAuth: []
+  - BearerAuth: []
+

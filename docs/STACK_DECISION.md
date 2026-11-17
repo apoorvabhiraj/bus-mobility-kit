@@ -1,7 +1,7 @@
 # Stack decision — Intelligent Bus Mobility & Crowdedness-Aware Journey Planner
 
 Decision: adopt the recommended stack below as the project's application stack.
-Status: proposed (awaits `git init` + first task branch before CI/enforcement applies).
+Status: adopted (git repository initialized, feature/BUS-001-infrastructure integrated, monorepo verified).
 Approved by: project human owner.
 
 ## Selected stack
@@ -12,38 +12,58 @@ Approved by: project human owner.
 | Styling | Tailwind CSS |
 | Frontend state | Zustand |
 | Backend | Node.js + Express + TypeScript |
-| API style | REST + OpenAPI |
+| API style | REST + OpenAPI 3.1.0 |
 | Runtime validation | Zod |
 | Database | PostgreSQL |
 | ORM / migrations | Prisma |
-| JavaScript package manager | pnpm |
-| Python package manager | uv |
-| Monorepo | pnpm workspaces + Turborepo |
+| JavaScript package manager | pnpm (v12 workspaces) |
+| Python package manager | uv (reserved for offline batch data pipelines) |
+| Monorepo | pnpm workspaces (`packages/*`) |
 | Unit testing | Vitest |
 | API integration testing | Supertest |
 | E2E testing | Playwright |
-| API compatibility | OpenAPI diff / breaking-change checks |
-| CI | GitHub Actions |
+| API compatibility | OpenAPI 3.1.0 validation & breaking-change checks (`scripts/check-openapi-compatibility.js`) |
+| CI | GitHub Actions (`.github/workflows/ci.yml`) |
 
-## Notes
+## OpenAPI Contract Structure Decision
 
-- Python / `uv` is included in the stack but no Python application surface is defined yet. Keep `uv` only if Python tooling is added; otherwise remove it to avoid an unused lockfile.
-- The kit already reserved `pnpm-lock.yaml` / `pyproject.toml` + `uv.lock` as dependency-manifest options and `schemas/contracts/` for versioned shared interfaces. This stack selects the pnpm side of that choice.
-- OpenAPI contracts live in `schemas/contracts/` and must be versioned; database changes must be ordered Prisma migrations.
+### Decision: Hybrid Gateway + Modular Domain Contracts (Standardized on OpenAPI 3.1.0)
 
-## What still must be done (per SETUP_CHECKLIST.md)
+We evaluated two architectural approaches for contract management:
+1. **Single Monolithic Contract**: Merging all endpoints (GPS ingestion, passenger load estimation, time-series, and journey planning) into one large YAML document.
+2. **Purely Segregated Contracts**: Maintaining completely independent specifications with distinct data models and no canonical consumer contract.
 
-1. `git init` the folder; set `main` as protected default branch.
-2. Configure GitHub Ruleset / branch protection: PR required, no direct pushes, no force pushes, at least one independent approval, require all CI status checks.
-3. Add real API contracts (OpenAPI) in `schemas/contracts/` + compatibility checks.
-4. Add real ordered Prisma migrations + migration tests.
-5. Generate authentic `pnpm-lock.yaml` (and `uv.lock` only if Python is used).
-6. Add unit, contract, integration, E2E, build and smoke tests wired to CI.
-7. Fill in `CODEOWNERS` with real reviewers; add `.github/CODEOWNERS` entries for `schemas/contracts/`, `database/migrations/`, `.github/`, `governance/`.
-8. Trial the controls on a non-production branch before relying on them.
+**Adopted Decision**: A **Hybrid Gateway Architecture with Unified OpenAPI 3.1.0 Versioning**:
+- **Canonical Unified Gateway Contract (`schemas/contracts/journey-api-v1.yaml`)**:
+  - The single source of truth for application clients (`packages/frontend`) and backend service implementations (`packages/backend`).
+  - Combines multimodal transit routing with Problem 1 GPS travel-time distributions (`p50DurationMinutes`, `p90DurationMinutes`, `trafficDelayMinutes`) and Problem 2 crowdedness load proxy metrics (`overallCrowdingLevel`, `peakCrowdingLevel`, `averageOccupancyProxy`, `standingLikelihood`, `dataCaveatNotice`).
+  - Exposes `/health`, `/journeys/plan`, `/stops`, and `/routes/{routeId}/metrics`.
+- **Specialized Problem Domain Contracts**:
+  - **Problem 1 Engine (`schemas/contracts/travel-time-openapi.yaml`)**: Standalone specification for DTC bus GPS trace analysis and travel-time estimation (`/journey/travel-time`).
+  - **Problem 2 Engine (`schemas/contracts/crowdedness-api.yaml`)**: Standalone specification for e-ticketing issuance proxy analysis, route-segment occupancy proxies, and load time-series (`/crowdedness/estimate`, `/crowdedness/route-summary`, `/crowdedness/time-series`, etc.).
+- **Universal OpenAPI 3.1.0 Standard**:
+  - All contracts upgraded and unified to OpenAPI 3.1.0.
+  - Aligns with modern JSON Schema 2020-12 specifications (e.g. type arrays replacing legacy `nullable: true`).
+  - Duplicate YAML server definitions resolved.
+- **Automated Monorepo Enforcement**:
+  - `pnpm contract:check` validates all specifications in `schemas/contracts/` against OpenAPI 3.1.0 syntax and verifies composite schema completeness.
+  - Enforced in `.github/workflows/ci.yml` on all PRs and pushes to `main`.
+
+## Monorepo & Pipeline Structure
+
+- **Workspaces**: `packages/backend` (`@delhi-transport/backend`) and `packages/frontend` (`delhi-journey-planner-frontend`).
+- **Scripts**:
+  - `pnpm install`: installs and locks all workspace dependencies.
+  - `pnpm typecheck`: runs `tsc --noEmit` across backend and frontend packages.
+  - `pnpm lint`: runs type-level lint verification across all packages.
+  - `pnpm test`: runs full Vitest test suites (15 tests: 12 backend + 3 frontend).
+  - `pnpm build`: builds backend (`tsc`) and frontend (`tsc && vite build`).
+  - `pnpm contract:check`: verifies all OpenAPI contracts.
+  - `pnpm dev`: parallel development mode for backend and frontend.
 
 ## Related
 
-- `ARCHITECTURE.md` — updated with the selected stack.
-- `coordination/TASK_REGISTRY.md` — task BUS-001 is the first implementation task; stack selection is its prerequisite.
-- `governance/DEPENDENCY_POLICY.md`, `governance/API_CONTRACT_POLICY.md`, `governance/DATABASE_MIGRATION_POLICY.md` — govern changes to this stack going forward.
+- `ARCHITECTURE.md` — updated with the selected stack and system topology.
+- `schemas/contracts/README.md` — complete specification of contracts, endpoints, and governance labels.
+- `coordination/TASK_REGISTRY.md` — task tracking and ownership.
+- `governance/DEPENDENCY_POLICY.md`, `governance/API_CONTRACT_POLICY.md`, `governance/DATABASE_MIGRATION_POLICY.md` — govern changes going forward.

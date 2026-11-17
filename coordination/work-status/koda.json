@@ -1,8 +1,23 @@
 {
   "developer": "koda",
-  "reported_at_utc": "2026-11-17T18:54:50.036722+00:00",
-  "branch": "feature/BUS-001-backend",
-  "working_tree_dirty": false,
-  "changed_paths": [],
+  "reported_at_utc": "2026-11-17T19:23:14.243268+00:00",
+  "branch": "feature/BUS-001-infrastructure",
+  "working_tree_dirty": true,
+  "changed_paths": [
+    "ARCHITECTURE.md",
+    "PROBLEM1_DESIGN_SUMMARY.md",
+    "docs/STACK_DECISION.md",
+    "docs/problem1/",
+    "docs/problem2/",
+    "github/workflows/ci.yml",
+    "package.json",
+    "packages/backend/package.json",
+    "packages/frontend/",
+    "pnpm-lock.yaml",
+    "schemas/contracts/README.md",
+    "schemas/contracts/crowdedness-api.yaml",
+    "schemas/contracts/travel-time-openapi.yaml",
+    "scripts/check-openapi-compatibility.js"
+  ],
   "limitations": "Voluntary local report; may be stale or incomplete; no diff/content included."
 }
