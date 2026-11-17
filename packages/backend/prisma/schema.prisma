@@ -108,3 +108,24 @@ model JourneySearchLog {
   optimizePreference String @default("balanced")
   createdAt        DateTime @default(now())
 }
+
+// Problem 1: real-time GTFS-RT vehicle positions
+model VehiclePosition {
+  id            String   @id @default(uuid())
+  vehicleId     String
+  tripId        String?
+  routeId       String?
+  lat           Float
+  lon           Float
+  bearing       Float?
+  speed         Float?   // meters/second
+  timestamp     DateTime // feed timestamp (UTC)
+  recordedAt    DateTime @default(now()) // when we ingested it
+  currentStopSequence Int?
+  stopId        String?
+
+  @@index([vehicleId])
+  @@index([routeId])
+  @@index([timestamp])
+  @@index([lat, lon])
+}

@@ -5,3 +5,5 @@ allowBuilds:
   '@prisma/engines': true
   esbuild: true
   prisma: true
+minimumReleaseAgeExclude:
+  - gtfs-realtime-bindings@3.0.0
