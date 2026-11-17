@@ -1,0 +1,30 @@
+name: Starter CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  policy-and-placeholder:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify required policy files exist
+        run: |
+          test -f AGENTS.md
+          test -f SOUL.md
+          test -f governance/INTEGRATION_ACCEPTANCE_POLICY.md
+      - name: Scope validation placeholder
+        run: |
+          echo "TODO: connect trusted task manifest and scope validator."
+          echo "Do not treat this placeholder as an enforced ownership check."
+      - name: Application validation placeholder
+        run: |
+          echo "TODO: install selected toolchains and run lint, typecheck, tests, contracts, migrations and build."
+          echo "This job is not a substitute for real application CI."

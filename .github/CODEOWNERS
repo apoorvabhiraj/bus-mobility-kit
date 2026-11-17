@@ -1,0 +1,6 @@
+# Replace TBD with actual GitHub usernames before relying on this file.
+# Example:
+# /schemas/contracts/ @developer1 @developer2
+# /database/migrations/ @developer1 @developer2
+# /.github/ @integrator
+# /governance/ @integrator
